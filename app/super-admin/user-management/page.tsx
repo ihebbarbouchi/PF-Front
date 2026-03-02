@@ -23,7 +23,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '../../components/ui/select';
-import { Users, UserCheck, GraduationCap, Search, Plus, Trash2, ShieldCheck, Loader2, AlertCircle, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Users, UserCheck, GraduationCap, Search, Plus, Trash2, ShieldCheck, Loader2, AlertCircle, Clock, CheckCircle, XCircle, Eye, Edit } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api';
@@ -33,15 +33,15 @@ interface User {
     name: string;
     email: string;
     role: 'student' | 'teacher' | 'super-admin';
-    status: 'active' | 'inactive';
+    status: 'active' | 'inactive' | 'pending' | 'rejected';
     joinedAt: string;
 }
 
 export default function UserManagement() {
     const { token } = useAuth();
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterRole, setFilterRole] = useState<'all' | User['role']>('all');
-    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+    const [filterRole, setFilterRole] = useState<'all' | 'student' | 'teacher'>('all');
+    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'pending' | 'rejected'>('all');
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [editUser, setEditUser] = useState<User | null>(null);
     const [newName, setNewName] = useState('');
@@ -49,6 +49,7 @@ export default function UserManagement() {
     const [newRole, setNewRole] = useState<User['role']>('student');
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [actionLoading, setActionLoading] = useState<number | null>(null);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -72,7 +73,7 @@ export default function UserManagement() {
                     name: u.name as string,
                     email: u.email as string,
                     role: (u.role as string) as User['role'],
-                    status: (u.status as string) === 'active' ? 'active' : 'inactive',
+                    status: (u.status as string) as User['status'],
                     joinedAt: (u.created_at as string)?.split('T')[0] ?? '',
                 }));
                 setUsers(list);
@@ -93,11 +94,13 @@ export default function UserManagement() {
             u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             u.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-        // Uniquement les apprenants (students) et pas de super-admin ni de teacher ici
-        const isStudent = u.role === 'student';
+        const matchesRole = filterRole === 'all' || u.role === filterRole;
         const matchesStatus = filterStatus === 'all' || u.status === filterStatus;
 
-        return matchesSearch && isStudent && matchesStatus;
+        // Ne pas afficher les super-admins dans cette liste
+        const isNotAdmin = u.role !== 'super-admin';
+
+        return matchesSearch && matchesRole && matchesStatus && isNotAdmin;
     });
 
     const handleAdd = () => {
@@ -138,8 +141,75 @@ export default function UserManagement() {
 
     const toggleStatus = (id: number) => {
         setUsers((prev) =>
-            prev.map((u) => (u.id === id ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' } : u))
+            prev.map((u) => (u.id === id ? { ...u, status: u.status === 'active' ? 'inactive' : u.status === 'inactive' ? 'active' : u.status } : u))
         );
+    };
+
+    const handleApprove = async (id: number) => {
+        setActionLoading(id);
+        try {
+            const res = await fetch(`${API_URL}/admin/approve-teacher/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            if (res.ok) {
+                setUsers((prev) =>
+                    prev.map((u) => (u.id === id ? { ...u, status: 'active' } : u))
+                );
+            }
+        } catch {
+            // ignorer
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleReject = async (id: number) => {
+        setActionLoading(id);
+        try {
+            const res = await fetch(`${API_URL}/admin/reject-teacher/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            if (res.ok) {
+                setUsers((prev) =>
+                    prev.map((u) => (u.id === id ? { ...u, status: 'rejected' } : u))
+                );
+            }
+        } catch {
+            // ignorer
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleReset = async (id: number) => {
+        if (!confirm("Voulez-vous remettre ce compte en attente pour modifier son statut ?")) return;
+        setActionLoading(id);
+        try {
+            const res = await fetch(`${API_URL}/admin/reset-teacher/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            if (res.ok) {
+                setUsers((prev) =>
+                    prev.map((u) => (u.id === id ? { ...u, status: 'pending' } : u))
+                );
+            }
+        } catch {
+            // ignorer
+        } finally {
+            setActionLoading(null);
+        }
     };
 
     const openEdit = (user: User) => {
@@ -160,11 +230,10 @@ export default function UserManagement() {
         }
     };
 
-    const studentsList = users.filter((u) => u.role === 'student');
-    const totalApprenants = studentsList.length;
-    const activeStudents = studentsList.filter((u) => u.status === 'active').length;
-    const inactiveStudents = studentsList.filter((u) => u.status === 'inactive').length;
-    const deletedOrRejected = 0; // Placeholder for future use or matching example layout count if needed
+    const totalUsers = users.filter(u => u.role !== 'super-admin').length;
+    const studentCount = users.filter((u) => u.role === 'student').length;
+    const teacherCount = users.filter((u) => u.role === 'teacher').length;
+    const pendingTeachers = users.filter((u) => u.role === 'teacher' && u.status === 'pending').length;
 
     return (
         <Layout role="super-admin" onSearch={handleSearch}>
@@ -172,8 +241,8 @@ export default function UserManagement() {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-3xl font-bold text-gray-900">Gestion des apprenants</h2>
-                        <p className="text-gray-600 mt-1">Gérez tous les élèves inscrits sur la plateforme</p>
+                        <h2 className="text-3xl font-bold text-gray-900">Gestion des utilisateurs</h2>
+                        <p className="text-gray-600 mt-1">Gérez les apprenants et les enseignants de la plateforme</p>
                     </div>
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={fetchUsers} disabled={isLoading}>
@@ -183,15 +252,15 @@ export default function UserManagement() {
                         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                             <DialogTrigger asChild>
                                 <Button className="bg-violet-600 hover:bg-violet-700">
-                                    <Plus className="w-4 h-4 mr-2" /> Ajouter un apprenant
+                                    <Plus className="w-4 h-4 mr-2" /> Ajouter un utilisateur
                                 </Button>
                             </DialogTrigger>
                             <DialogContent className="max-w-md bg-white p-0 overflow-hidden border-none shadow-2xl">
                                 <div className="bg-violet-600 p-6 text-white">
                                     <DialogHeader>
-                                        <DialogTitle className="text-xl text-white">Ajouter un apprenant</DialogTitle>
+                                        <DialogTitle className="text-xl text-white">Ajouter un utilisateur</DialogTitle>
                                         <DialogDescription className="text-violet-100 opacity-90">
-                                            Créer un nouveau compte élève
+                                            Créer un nouveau compte
                                         </DialogDescription>
                                     </DialogHeader>
                                 </div>
@@ -203,6 +272,16 @@ export default function UserManagement() {
                                     <div className="space-y-2">
                                         <Label htmlFor="add-user-email" className="text-gray-700 font-medium">Adresse e-mail</Label>
                                         <Input id="add-user-email" type="email" placeholder="jean@example.com" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="h-11 shadow-sm focus:ring-violet-500 focus:border-violet-500" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-gray-700 font-medium">Rôle</Label>
+                                        <Select value={newRole} onValueChange={(v) => setNewRole(v as User['role'])}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="student">Apprenant</SelectItem>
+                                                <SelectItem value="teacher">Enseignant</SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                     <div className="pt-4">
                                         <Button onClick={handleAdd} className="w-full bg-violet-600 hover:bg-violet-700 h-11 text-base font-semibold transition-all hover:scale-[1.02] active:scale-95" disabled={!newName.trim() || !newEmail.trim()}>
@@ -231,8 +310,30 @@ export default function UserManagement() {
                                 <Users className="w-5 h-5 text-violet-600" />
                             </div>
                             <div>
-                                <p className="text-xs text-gray-400 font-medium">Total</p>
-                                <p className="text-xl font-bold text-gray-900">{totalApprenants}</p>
+                                <p className="text-xs text-gray-400 font-medium">Total Utilisateurs</p>
+                                <p className="text-xl font-bold text-gray-900">{totalUsers}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                <GraduationCap className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-400 font-medium">Apprenants</p>
+                                <p className="text-xl font-bold text-gray-900">{studentCount}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                                <UserCheck className="w-5 h-5 text-emerald-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-400 font-medium">Enseignants</p>
+                                <p className="text-xl font-bold text-gray-900">{teacherCount}</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -242,30 +343,8 @@ export default function UserManagement() {
                                 <Clock className="w-5 h-5 text-yellow-600" />
                             </div>
                             <div>
-                                <p className="text-xs text-gray-400 font-medium">En attente</p>
-                                <p className="text-xl font-bold text-gray-900">{inactiveStudents}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="p-4 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                                <CheckCircle className="w-5 h-5 text-green-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-400 font-medium">Approuvés</p>
-                                <p className="text-xl font-bold text-gray-900">{activeStudents}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="p-4 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                                <XCircle className="w-5 h-5 text-red-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-400 font-medium">Rejetés</p>
-                                <p className="text-xl font-bold text-gray-900">{deletedOrRejected}</p>
+                                <p className="text-xs text-gray-400 font-medium">En attente (Ensg.)</p>
+                                <p className="text-xl font-bold text-gray-900">{pendingTeachers}</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -284,12 +363,23 @@ export default function UserManagement() {
                         />
                     </div>
 
+                    <Select value={filterRole} onValueChange={(v) => setFilterRole(v as typeof filterRole)}>
+                        <SelectTrigger className="w-44"><SelectValue placeholder="Filtrer par rôle" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Tous les rôles</SelectItem>
+                            <SelectItem value="student">Apprenants</SelectItem>
+                            <SelectItem value="teacher">Enseignants</SelectItem>
+                        </SelectContent>
+                    </Select>
+
                     <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as typeof filterStatus)}>
                         <SelectTrigger className="w-44"><SelectValue placeholder="Filtrer par statut" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Tous les statuts</SelectItem>
-                            <SelectItem value="active">Actifs</SelectItem>
+                            <SelectItem value="active">Actifs / Approuvés</SelectItem>
                             <SelectItem value="inactive">Inactifs</SelectItem>
+                            <SelectItem value="pending">En attente</SelectItem>
+                            <SelectItem value="rejected">Rejetés</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -297,7 +387,7 @@ export default function UserManagement() {
                 {/* Tableau */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>Liste des apprenants</CardTitle>
+                        <CardTitle>Liste des utilisateurs</CardTitle>
                         <CardDescription>{filtered.length} utilisateur{filtered.length !== 1 ? 's' : ''} trouvé{filtered.length !== 1 ? 's' : ''}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0">
@@ -326,28 +416,67 @@ export default function UserManagement() {
                                             <TableCell>
                                                 <Badge
                                                     variant={user.status === 'active' ? 'default' : 'secondary'}
-                                                    className={user.status === 'active' ? 'bg-green-100 text-green-800 border border-green-200' : ''}
+                                                    className={
+                                                        user.status === 'active' ? 'bg-green-100 text-green-800 border border-green-200' :
+                                                            user.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                                                user.status === 'rejected' ? 'bg-red-100 text-red-800 border-red-200' : ''
+                                                    }
                                                 >
-                                                    {user.status === 'active' ? 'Actif' : 'Inactif'}
+                                                    {user.status === 'active' ? (user.role === 'teacher' ? 'Approuvé' : 'Actif') :
+                                                        user.status === 'pending' ? 'En attente' :
+                                                            user.status === 'rejected' ? 'Rejeté' : 'Inactif'}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell className="text-gray-600">{user.joinedAt}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-2">
+                                                    {/* Actions pour les enseignants en attente */}
+                                                    {user.role === 'teacher' && user.status === 'pending' ? (
+                                                        <>
+                                                            <Button
+                                                                size="sm"
+                                                                className="bg-green-600 hover:bg-green-700 text-white gap-1 h-9 px-3"
+                                                                onClick={() => handleApprove(user.id)}
+                                                                disabled={actionLoading === user.id}
+                                                            >
+                                                                {actionLoading === user.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                                                Accepter
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                className="bg-red-600 hover:bg-red-700 text-white gap-1 h-9 px-3"
+                                                                onClick={() => handleReject(user.id)}
+                                                                disabled={actionLoading === user.id}
+                                                            >
+                                                                {actionLoading === user.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                                                                Refuser
+                                                            </Button>
+                                                        </>
+                                                    ) : user.role === 'teacher' && (user.status === 'active' || user.status === 'rejected') ? (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="text-violet-600 border-violet-200 hover:bg-violet-50 h-9 px-3 font-medium"
+                                                            onClick={() => handleReset(user.id)}
+                                                            disabled={actionLoading === user.id}
+                                                        >
+                                                            <Edit className="w-3 h-3 mr-1" /> Modifier
+                                                        </Button>
+                                                    ) : (
+                                                        /* Actions pour les apprenants */
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => toggleStatus(user.id)}
+                                                            className={`h-9 px-3 ${user.status === 'active'
+                                                                ? 'border-yellow-200 text-yellow-600 hover:bg-yellow-50'
+                                                                : 'border-green-200 text-green-600 hover:bg-green-50'}`}
+                                                        >
+                                                            {user.status === 'active' ? 'Désactiver' : 'Activer'}
+                                                        </Button>
+                                                    )}
 
-                                                    {/* Activer / Désactiver */}
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => toggleStatus(user.id)}
-                                                        className={`h-9 px-3 ${user.status === 'active'
-                                                            ? 'border-yellow-200 text-yellow-600 hover:bg-yellow-50'
-                                                            : 'border-green-200 text-green-600 hover:bg-green-50'}`}
-                                                    >
-                                                        {user.status === 'active' ? 'Désactiver' : 'Activer'}
-                                                    </Button>
-
-                                                    {/* Supprimer */}
+                                                    {/* Bouton supprimer commun */}
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
@@ -368,7 +497,7 @@ export default function UserManagement() {
                             <div className="text-center py-16">
                                 <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                                 <p className="text-gray-500 font-medium">Aucun utilisateur trouvé</p>
-                                <p className="text-gray-400 text-sm mt-1">Ajoutez des utilisateurs via le bouton ci-dessus</p>
+                                <p className="text-gray-400 text-sm mt-1">Essayez de modifier vos filtres</p>
                             </div>
                         )}
                     </CardContent>

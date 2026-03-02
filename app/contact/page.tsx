@@ -44,8 +44,8 @@ export default function Contact() {
     },
     {
       icon: MapPin,
-      title: 'Bureau',
-      content: '123 Rue de l\'Éducation, Ville du Savoir, 12345',
+      title: 'Plateforme en ligne',
+      content: 'Accessible partout, à tout moment',
       link: null,
     },
   ];
@@ -106,25 +106,7 @@ export default function Contact() {
               ))}
 
               {/* Heures de bureau */}
-              <Card>
-                <CardContent className="p-6">
-                  <h3 className="font-semibold text-gray-900 mb-3">Heures d&apos;ouverture</h3>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                      <span>Lundi - Vendredi</span>
-                      <span>9h00 - 18h00</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Samedi</span>
-                      <span>10h00 - 16h00</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Dimanche</span>
-                      <span>Fermé</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+
             </div>
 
             {/* Formulaire de contact */}

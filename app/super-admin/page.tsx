@@ -47,12 +47,6 @@ export default function SuperAdminDashboard() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [usersError, setUsersError] = useState('');
 
-  // Teachers
-  const [teachers, setTeachers] = useState<TeacherApplication[]>([]);
-  const [teachersLoading, setTeachersLoading] = useState(true);
-  const [teachersError, setTeachersError] = useState('');
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
-
   const categories: { id: number; name: string; resources: number; students: number }[] = [];
 
   // ── Charger tous les utilisateurs ──
@@ -84,81 +78,10 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // ── Charger les enseignants en attente ──
-  const fetchTeachers = async () => {
-    setTeachersLoading(true);
-    setTeachersError('');
-    try {
-      const res = await fetch(`${API_URL}/admin/pending-teachers`, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const list = (data.data ?? data).map((u: Record<string, unknown>) => ({
-          id: u.id as number,
-          name: u.name as string,
-          email: u.email as string,
-          date: (u.created_at as string)?.split('T')[0] ?? '',
-          status: u.status as 'pending' | 'active' | 'rejected',
-        }));
-        setTeachers(list);
-      } else {
-        setTeachersError('Impossible de charger les enseignants.');
-      }
-    } catch {
-      setTeachersError('Impossible de contacter le serveur.');
-    } finally {
-      setTeachersLoading(false);
-    }
-  };
-
   useEffect(() => {
     fetchUsers();
-    fetchTeachers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ── Approuver un enseignant ──
-  const handleApproveTeacher = async (id: number) => {
-    setActionLoading(id);
-    try {
-      const res = await fetch(`${API_URL}/admin/approve-teacher/${id}`, {
-        method: 'POST',
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setTeachers((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, status: 'active' as const } : t))
-        );
-        // Met à jour aussi la liste des utilisateurs
-        fetchUsers();
-      }
-    } catch {
-      // ignorer
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // ── Rejeter / refuser un enseignant ──
-  const handleRejectTeacher = async (id: number) => {
-    setActionLoading(id);
-    try {
-      const res = await fetch(`${API_URL}/admin/reject-teacher/${id}`, {
-        method: 'POST',
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setTeachers((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, status: 'rejected' as const } : t))
-        );
-      }
-    } catch {
-      // ignorer
-    } finally {
-      setActionLoading(null);
-    }
-  };
 
   const handleAddCategory = () => {
     console.log('Adding category:', categoryName, categoryDescription);
@@ -190,17 +113,6 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  const getTeacherStatusBadge = (status: TeacherApplication['status']) => {
-    switch (status) {
-      case 'pending':
-        return <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-200"><Clock className="w-3 h-3 mr-1" />En attente</Badge>;
-      case 'active':
-        return <Badge className="bg-green-100 text-green-800 border border-green-200"><CheckCircle className="w-3 h-3 mr-1" />Approuvé</Badge>;
-      case 'rejected':
-        return <Badge className="bg-red-100 text-red-800 border border-red-200"><XCircle className="w-3 h-3 mr-1" />Rejeté</Badge>;
-    }
-  };
-
   // ── Stats ──
   const totalStudents = users.filter((u) => u.role === 'student').length;
   const totalTeachers = users.filter((u) => u.role === 'teacher').length;
@@ -218,7 +130,7 @@ export default function SuperAdminDashboard() {
       <div className="space-y-6">
         <div>
           <h2 className="text-3xl font-bold text-gray-900">Tableau de bord</h2>
-          <p className="text-gray-600 mt-1">Gérez les utilisateurs, validez les enseignants et surveillez la plateforme</p>
+          <p className="text-gray-600 mt-1">Gérez les utilisateurs, les catégories et surveillez la plateforme</p>
         </div>
 
         {/* Stats Grid */}
@@ -244,22 +156,27 @@ export default function SuperAdminDashboard() {
           ))}
         </div>
 
-        {/* ── Section Gestion des Apprenants (uniquement les étudiants) ── */}
+        {/* ── Section Gestion Unifiée des Utilisateurs ── */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-violet-600" />
+                <Users className="w-6 h-6 text-violet-600" />
               </div>
               <div>
-                <CardTitle>Gestion des Utilisateurs (Apprenants)</CardTitle>
-                <CardDescription>Liste exclusive des élèves inscrits</CardDescription>
+                <CardTitle>Utilisateurs récents</CardTitle>
+                <CardDescription>Aperçu des derniers apprenants et enseignants inscrits</CardDescription>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={fetchUsers} disabled={usersLoading}>
-              {usersLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              Actualiser
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={fetchUsers} disabled={usersLoading}>
+                {usersLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Actualiser
+              </Button>
+              <Button size="sm" asChild className="bg-violet-600 hover:bg-violet-700">
+                <a href="/super-admin/user-management">Voir tout</a>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {usersError && (
@@ -278,26 +195,31 @@ export default function SuperAdminDashboard() {
                   <TableRow>
                     <TableHead>Nom</TableHead>
                     <TableHead>Email</TableHead>
+                    <TableHead>Rôle</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead>Inscrit le</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users
-                    .filter((u) => u.role === 'student')
+                    .filter((u) => u.role !== 'super-admin')
+                    .slice(0, 5) // Que les 5 derniers
                     .map((user) => (
                       <TableRow key={user.id}>
                         <TableCell className="font-medium">{user.name}</TableCell>
                         <TableCell className="text-gray-600">{user.email}</TableCell>
+                        <TableCell>{getRoleBadge(user.role)}</TableCell>
                         <TableCell>
                           <Badge
                             className={
                               user.status === 'active'
                                 ? 'bg-green-100 text-green-800 border border-green-200'
-                                : 'bg-gray-100 text-gray-600 border border-gray-200'
+                                : user.status === 'pending'
+                                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                                  : 'bg-gray-100 text-gray-600 border border-gray-200'
                             }
                           >
-                            {user.status === 'active' ? 'Actif' : 'Apprenant'}
+                            {user.status === 'active' ? 'Actif' : user.status === 'pending' ? 'En attente' : 'Inactif'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-gray-500 text-sm">{user.joinedAt}</TableCell>
@@ -306,85 +228,10 @@ export default function SuperAdminDashboard() {
                 </TableBody>
               </Table>
             )}
-            {!usersLoading && users.filter((u) => u.role === 'student').length === 0 && (
+            {!usersLoading && users.length === 0 && (
               <div className="text-center py-12">
-                <GraduationCap className="w-10 h-10 text-gray-100 mx-auto mb-2" />
-                <p className="text-gray-400 text-sm">Aucun apprenant trouvé.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ── Section Validation et Gestion des Enseignants ── */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Validation & Gestion des Enseignants</CardTitle>
-              <CardDescription>Liste de tous les enseignants et gestion des validations</CardDescription>
-            </div>
-            <Button variant="outline" size="sm" onClick={fetchUsers} disabled={usersLoading}>
-              {usersLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              Actualiser
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0">
-            {usersLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-7 h-7 animate-spin text-violet-600" />
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nom</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Inscrit le</TableHead>
-                    <TableHead>Statut</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users
-                    .filter((u) => u.role === 'teacher')
-                    .map((teacher) => (
-                      <TableRow key={teacher.id}>
-                        <TableCell className="font-medium">{teacher.name}</TableCell>
-                        <TableCell className="text-gray-600">{teacher.email}</TableCell>
-                        <TableCell className="text-gray-500 text-sm">{teacher.joinedAt}</TableCell>
-                        <TableCell>
-                          {teacher.status === 'active' ? (
-                            <Badge className="bg-green-100 text-green-800 border border-green-200">
-                              <CheckCircle className="w-3 h-3 mr-1" /> Actif
-                            </Badge>
-                          ) : teacher.status === 'rejected' ? (
-                            <Badge variant="destructive">
-                              <XCircle className="w-3 h-3 mr-1" /> Refusé
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-200">
-                              <Clock className="w-3 h-3 mr-1" /> En attente
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${teacher.status === 'active' ? 'text-green-700 bg-green-50' :
-                              teacher.status === 'rejected' ? 'text-red-700 bg-red-50' :
-                                'text-yellow-700 bg-yellow-50'
-                            }`}>
-                            {teacher.status === 'active' ? 'Approuvé' :
-                              teacher.status === 'rejected' ? 'Refusé' :
-                                'En attente'}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            )}
-            {!usersLoading && users.filter((u) => u.role === 'teacher').length === 0 && (
-              <div className="text-center py-12">
-                <UserCheck className="w-10 h-10 text-gray-100 mx-auto mb-2" />
-                <p className="text-gray-400 text-sm">Aucun enseignant trouvé.</p>
+                <Users className="w-10 h-10 text-gray-100 mx-auto mb-2" />
+                <p className="text-gray-400 text-sm">Aucun utilisateur trouvé.</p>
               </div>
             )}
           </CardContent>

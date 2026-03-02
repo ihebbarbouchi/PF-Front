@@ -63,7 +63,6 @@ export function Layout({ children, role, onSearch }: LayoutProps) {
         return [
           { icon: Home, label: 'Tableau de bord', path: '/super-admin' },
           { icon: Users, label: 'Gestion des utilisateurs', path: '/super-admin/user-management' },
-          { icon: CheckCircle, label: 'Validation des enseignants', path: '/super-admin/teacher-validation' },
           { icon: FolderOpen, label: 'Catégories', path: '/super-admin/categories' },
           { icon: BarChart3, label: 'Statistiques', path: '/super-admin' },
         ];

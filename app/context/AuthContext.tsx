@@ -18,13 +18,15 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (data: SignupData) => Promise<{ success: boolean; error?: string }>;
+  signup: (formData: FormData) => Promise<{ success: boolean; error?: string }>;
+  completeProfile: (formData: FormData) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isAuthenticated: boolean;
 }
 
 interface SignupData {
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   password: string;
   role: 'student' | 'teacher';
@@ -37,11 +39,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const isAuthenticated = !!token && !!user;
 
-  // On mount, check if user is already logged in from localStorage
+  // On mount, check if user is already logged in from sessionStorage
   useEffect(() => {
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUser = localStorage.getItem('auth_user');
+    const storedToken = sessionStorage.getItem('auth_token');
+    const storedUser = sessionStorage.getItem('auth_user');
 
     if (storedToken && storedUser) {
       setToken(storedToken);
@@ -49,6 +52,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(false);
   }, []);
+
+  // Protected routes check
+  useEffect(() => {
+    if (!isLoading) {
+      const protectedPaths = ['/super-admin', '/teacher', '/student', '/add-resource', '/quiz'];
+      const currentPath = window.location.pathname;
+
+      const isProtected = protectedPaths.some(path => currentPath.startsWith(path));
+
+      if (isProtected && !isAuthenticated) {
+        router.push('/');
+      }
+    }
+  }, [isLoading, isAuthenticated, router]);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -70,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Store token and user in state + localStorage
       setToken(data.token);
       setUser(data.user);
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      sessionStorage.setItem('auth_token', data.token);
+      sessionStorage.setItem('auth_user', JSON.stringify(data.user));
 
       // Redirect based on role
       const role = data.user.role;
@@ -90,15 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signup = async (signupData: SignupData): Promise<{ success: boolean; error?: string }> => {
+  const signup = async (formData: FormData): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify(signupData),
+        body: formData,
       });
 
       const data = await response.json();
@@ -108,24 +124,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: errorMessage };
       }
 
-      // Store token and user in state + localStorage
+      // Store token and user in state + sessionStorage
       setToken(data.token);
       setUser(data.user);
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
-
-      // Redirect based on role
-      const role = data.user.role;
-      if (role === 'teacher') {
-        router.push('/teacher');
-      } else {
-        router.push('/student');
-      }
+      sessionStorage.setItem('auth_token', data.token);
+      sessionStorage.setItem('auth_user', JSON.stringify(data.user));
 
       return { success: true };
     } catch (error) {
       console.error('Signup error:', error);
-      return { success: false, error: 'Network error. Please check if the server is running.' };
+      return { success: false, error: 'Network error.' };
+    }
+  };
+
+  const completeProfile = async (formData: FormData): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const response = await fetch(`${API_URL}/complete-profile`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sessionStorage.getItem('auth_token')}`,
+          'Accept': 'application/json',
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.message || 'Profile update failed' };
+      }
+
+      setUser(data.user);
+      sessionStorage.setItem('auth_user', JSON.stringify(data.user));
+
+      return { success: true };
+    } catch (error) {
+      console.error('Complete profile error:', error);
+      return { success: false, error: 'Network error.' };
     }
   };
 
@@ -146,8 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clear state and localStorage regardless
       setToken(null);
       setUser(null);
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
+      sessionStorage.removeItem('auth_token');
+      sessionStorage.removeItem('auth_user');
       router.push('/');
     }
   };
@@ -160,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         signup,
+        completeProfile,
         logout,
         isAuthenticated: !!token && !!user,
       }}
